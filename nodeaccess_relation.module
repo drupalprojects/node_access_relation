@@ -1,0 +1,882 @@
+<?php
+
+/**
+ * @file
+ * The Relation ACL module.
+ */
+
+/**
+ * Implements hook_node_grants().
+ */
+/*
+ * /**
+ * Implements hook_node_grants().
+ */
+/*
+function nodeaccess_relation_node_grants($account, $op) {
+  $grants = array();
+  $grants['nodeaccess_relation_view'][] = $account->uid;
+  $grants['nodeaccess_relation_update'][] = $account->uid;
+  $grants['nodeaccess_relation_delete'][] = $account->uid;
+  $grants['nodeaccess_relation_published'][] = $account->uid;
+  $grants['nodeaccess_relation_author'][] = 2;
+  $grants['nodeaccess_relation_all'][] = 1;
+  return $grants;
+}
+*/
+
+/**
+ * Implements hook_node_access().
+ */
+function nodeaccess_relation_node_access($node, $op, $account) {
+  $relations = nodeaccess_relation_get_relations($node);
+  if (!empty($relations)) { 
+    foreach ($relations as $type=>$rid) {
+      $field_data = nodeaccess_relation_field_settings('relation');
+      if (!empty($field_data[$type])) {
+        // needtoloop through everything and complete complete set of grants here
+        // and cache
+        foreach ($field_data[$type] as $field_name => &$data) {
+          if (!empty($data)) {
+            // Add referenced user grants.
+            $entities = entity_load('relation', $rid);
+            foreach ($entities as $relation) {
+              $items = field_get_items('relation', $relation, 'endpoints');
+              if (!empty($items)) {            
+                foreach ($items as &$endpoint) {
+                  $uid = NULL; 
+                  if ($endpoint['entity_type'] == 'user' && $endpoint['r_index'] == 0 && $account->uid == $endpoint['entity_id']) {
+                    if (array_key_exists($op,$field_data[$type]['referenced'])) {
+                      if ($field_data[$type]['referenced'][$op][$op] == $op) {
+                        return NODE_ACCESS_ALLOW;                       
+                      } else {
+                        return NODE_ACCESS_DENY;
+                      }                        
+                    }
+      /*                   foreach (array_keys($field_data['referenced']) as $operation) {
+                        nodeaccess_relation_add_grant(
+                          $grants,
+                          'nodeaccess_relation_' . $operation,
+                          $endpoint['entity_id'],
+                          $field_data['priority'],
+                          $field_data['referenced'][$operation]
+                          );
+                         }
+                          */
+                  }  
+                }
+              }
+            }
+          }  
+        }
+      }
+    }
+  }
+  return NODE_ACCESS_IGNORE;
+}
+
+
+/*
+function nodeaccess_relation_node_grants($account, $op) {
+  // $grants stores known grants for account/op combos, because the grant
+  // calculations can be exhaustive.  Proper caching is also used.
+  static $grants = array();
+  // Check the static cache for grants.
+  if (!isset($grants[$account->uid][$op])) {
+    // The static cache is empty, check the drupal cache.
+    // First check if the cache can be trusted.
+    if (variable_get('nodeaccess_relation_cache_needs_clear', FALSE)) {
+      // Clear the cache.
+      cache_clear_all('nodeaccess_relation', 'cache', TRUE);
+      variable_del('nodeaccess_relation_cache_needs_clear');
+      $cached_grants = NULL;
+    } 
+    else {
+      // Cache is good.
+      $cached_grants = cache_get('nodeaccess_relation_' . $account->uid . '_' . $op);
+    }
+    if (empty($cached_grants)) {
+      // There were no cached grants, calculate the grants.         
+      $result = nodeaccess_relation_calculate_grants($grants, $op, $account);   
+      echo "not-cached: ";
+      print_r($result);
+      die();
+      if (!empty($result)) {
+        // Function returned a value, it was incomplete and $grants was not
+        // affected, so return the result.
+        return $result;
+      }
+    }
+    else {
+      // Cache was good, assign the data to the static cache.
+      $grants[$account->uid][$op] = $cached_grants->data;
+    }
+  } 
+  echo "cached: ";
+  print_r($grants);
+  die();
+  return $grants[$account->uid][$op];
+}
+*/
+ 
+/**
+ * Calculate grants for nodeaccess_relation_node_grants().
+ */
+function nodeaccess_relation_calculate_grants(&$grants, $op, $account) {
+  // $current_references stores an array of node IDs for referenced nodes that
+  // are currently being node_access() checked by this function, to prevent
+  // recursively nested node_access() checking which causes an endless loop.
+  static $current_references = array();
+  // $known_node_access stores an array of results to calls to node_access()
+  // for that account/op/node ID.
+  static $known_node_access = array();
+  // $parent_reference is set to the current reference before calling
+  // node_access() so that the child iteration of this function is aware why it
+  // is being called.
+  static $parent_reference = NULL;
+  // $child_completed is used to pass the value of $complete to the parent
+  // iteration.
+  static $child_completed = TRUE;
+  // $complete marks whether the results of this iteration are to be considered
+  // completed and therefore stored in cache. An iteration is not considered
+  // complete when: 
+  //  - Recursion occurs on the same account/reference/operation combo. This
+  //    iteration will assume FALSE to prevent an endless loop, but this means
+  //    the data should not be relied upon in future calls.
+  //  - A child iteration is not complete (because of the previous reason).
+  $complete = TRUE;
+  // $do_cache is similar to $complete except it doesn't affect the static
+  // variable $child_completed.  $do_cache is set to FALSE when:
+  //  - This function is being called on behalf of a parent iteration.  The
+  //    cache should be based on the parent's calculations, not this iteration.
+  $do_cache = TRUE;
+
+  // Get info about whether we need cross access checking for this $op.
+  $cross_access = variable_get(
+    'nodeaccess_relation_cross_access',
+    array('view' => FALSE, 'update' => FALSE, 'delete' => FALSE)
+  );
+
+  // The access operations we check on the reference nodes will either be
+  // the current $op, or in situations where cross access checking is
+  // needed it will be all three operations.
+  if ($cross_access[$op]) {
+    $operations = array('view', 'update', 'delete');
+  }
+  else {
+    $operations = array($op);
+  }
+
+  // Track an array of node access grants, don't put them into static cache
+  // until later.
+  $rights = array();
+  // Get a list of all Node ID values from node reference fields.
+  $references = nodeaccess_relation_get_referenced($parent_reference, $account->uid);
+  
+  if (!is_null($parent_reference)) {
+    // There is a parent reference, so do not cache this run.
+    $do_cache = FALSE;
+  }
+
+  // Iterate through each reference.
+  foreach ($references as $reference=>$uid) {
+    // Alias for easier code reading.
+    $known = &$known_node_access[$account->uid][$reference];
+    // Flags whether we already have the data needed for an $operation.
+    $needs_check = FALSE;
+    // Check each $operation to see if we're missing $known data.
+    foreach ($operations as $operation) {
+      if (!isset($known[$operation])) {
+        $needs_check = TRUE;
+      }
+    }
+
+
+    if ($needs_check) {      
+      // This reference is missing $known value/s that we need, load it.
+      $reference_node = nodeaccess_relation_node_loadbypass($reference);               
+      if (!empty($reference_node)) {
+        // Reference loaded successfully.
+ 
+        // Check each $operation on the referenced node.
+        foreach ($operations as $operation) {
+          // Set the static $parent_reference variable to the reference being done.
+          $parent_reference = $reference;
+          if (!isset($known[$operation])) {
+            // We're missing an $operation or two, proceed with calculations.
+            if (!isset($current_references[$reference][$operation])) {
+              // This reference isn't in the list of ancestors, add to the list.
+              $current_references[$reference][$operation] = $reference;
+   
+              // We don't want static caching in node_access() to intefere. 
+              drupal_static_reset('node_access');
+
+              // Check node_access() and add the result to $known data.
+              $node_access = node_access($operation, $reference_node, $account);
+              // If the child completed fully, or node access was granted...
+              if ($child_completed || $node_access) { 
+                // We can rely on this information in the future.
+                $known[$operation] = $node_access; 
+              }
+              else {
+                // Flag this iteration as incomplete.
+                $complete = FALSE;
+                // Reset static variable.
+                $child_completed = TRUE;
+              }
+              // We're done with this reference, remove it from the list.
+              unset($current_references[$reference]);
+            }
+            else {
+              // Recursion, assume FALSE.
+              $complete = FALSE;
+              $node_access = FALSE;
+            }
+          }
+          else {
+            // Grab the value from known data.
+            $node_access = $known[$operation];
+          }
+          print_r($operation);
+          print_r($node_access);
+          // Check if the node_access() return value is TRUE.
+          if ($node_access) {
+            // Add the reference as a grant on the relevant realm.
+            $rights['nodeaccess_relation_' . $operation][] = $reference;
+//            if (!$cross_access[$op]) {
+              // Nothing more we need to do for this reference.
+              break;
+//            }
+          }
+        }
+      }
+    }
+    else {
+      // We have all the $known data we need, test the values of each
+      // operation and add the reference as a grant on the relevant
+      // realm.
+      foreach ($operations as $operation) {
+        if ($known[$operation]) {
+          $rights['nodeaccess_relation_' . $operation][] = $reference;
+        }
+      }
+    }
+  }
+  // Reset the $parent_reference variable.
+  $parent_reference = NULL;
+  // Add the author and all grants.
+  $rights['nodeaccess_relation_author'][] = $account->uid;
+  $rights['nodeaccess_relation_all'][] = 1;
+
+  if ($complete && $do_cache) {
+    // We have grants worked out completely, so add them to the caches.
+    // It is unsafe to store incomplete grants in any caches.
+    $grants[$account->uid][$op] = $rights;
+    // Use drupal cache to minimise how often this function needs to work out the grants.
+    cache_set('nodeaccess_relation_'. $account->uid .'_'. $op, $grants[$account->uid][$op]);
+  }
+  else {
+    if (!$complete) {
+      // Affect the static $child_completed variable.
+      $child_completed = FALSE;
+    }
+    return $rights;
+  }
+}
+
+/**
+ * Byass regular node_load
+ */
+function nodeaccess_relation_node_loadbypass($nid) {
+  
+  $result = db_query('SELECT nid, status, type, uid FROM {node} WHERE nid = :nid', array(':nid' => $nid));
+  foreach ($result as $record) {
+    $node->nid = $record->nid;
+    $node->status = $record->status; 
+    $node->type = $record->type;
+    $node->uid = $record->uid; 
+  }
+  return $node;
+}
+
+/**
+ * Get all target referenced nodes that are referenced in a Relation
+ * field.
+ */
+function nodeaccess_relation_get_referenced($eid = NULL, $nid = NULL) {
+  $references = array();
+  $settings = variable_get('nodeaccess_relation', array());
+  foreach ($settings as $type => $fields) {
+    foreach ($fields as $field => $data) {
+      if (
+        isset($data['referenced']) &&
+        nodeaccess_relation_array_filter($data['referenced'])
+      ) {
+        $args = array();
+        // @todo: This !empty() can eventually be removed.
+        if (!empty($type) && $type == 'relation') {
+          // this sql needs to bring up a list of target nodes from all teh matching relations 
+          $sql = 'SELECT DISTINCT fdes.endpoints_entity_id AS nid, fdet.endpoints_entity_id AS uid '
+            . 'FROM {field_data_endpoints} fdes '
+            . 'INNER JOIN {field_data_endpoints} fdet ON '
+            . '(fdet.entity_id = fdes.entity_id AND fdet.entity_type = fdes.entity_type AND fdet.bundle = fdes.bundle AND fdet.endpoints_r_index = 0) '
+            . 'INNER JOIN {node} n ON n.nid = fdes.endpoints_entity_id '
+            . 'INNER JOIN {relation} r ON fdet.entity_id = r.rid AND r.relation_type = :field '
+            . 'INNER JOIN {relation_bundles} rb ON (fdet.bundle = rb.relation_type AND rb.r_index = 0 AND rb.bundle = n.type) '
+            . 'WHERE fdes.entity_type = :relation AND fdes.bundle = :field AND fdes.endpoints_r_index > 0 ';
+        }  
+        if (!is_null($eid)) {
+          $sql .= 'AND (fdes.entity_id = :eid AND fdes.endpoints_entity_type = :node) ';
+          $args[':eid'] = $eid;
+          $args[':node'] = 'node';
+        } elseif (!is_null($nid)) {
+          //
+        } else {
+          $sql .= 'AND fdes.entity_id IS NOT NULL ';
+        }
+        $args[':field'] = $field;
+        $args[':relation'] = 'relation';
+
+        $result = db_query($sql, $args);
+        foreach ($result as $row) {
+          $references[$row->nid] = $row->uid;
+        }
+      }
+    }
+  } 
+  return $references;
+}
+
+/**
+ * Get all relations where nid is endpoint
+ */
+function nodeaccess_relation_get_relations($node = NULL) {
+  $references = array();
+  $settings = variable_get('nodeaccess_relation', array());
+  foreach ($settings as $type => $fields) {
+    foreach ($fields as $field => $data) {
+      if (
+          isset($data['referenced']) &&
+          nodeaccess_relation_array_filter($data['referenced'])
+      ) {
+        $args = array();
+        // @todo: This !empty() can eventually be removed.
+        if (!empty($type) && $type == 'relation') {
+          // this sql needs to bring up a list of target nodes from all teh matching relations
+          $sql = 'SELECT DISTINCT fde.entity_id AS eid, fde.bundle '
+          . 'FROM {field_data_endpoints} fde '
+          . 'INNER JOIN {node} n ON n.nid = fde.endpoints_entity_id '
+          . 'INNER JOIN {relation} r ON fde.entity_id = r.rid AND r.relation_type = :field ' 
+          . 'INNER JOIN {relation_bundles} rb ON (fde.bundle = rb.relation_type AND rb.r_index = 0 AND rb.bundle = n.type) '
+          . 'WHERE fde.entity_type = :relation AND fde.bundle = :field AND fde.endpoints_r_index > 0 and fde.endpoints_entity_type = :node '; 
+        } 
+        if (is_object($node) && $node->nid) {
+          $sql .= 'AND fde.endpoints_entity_id = :nid ';
+          $args[':nid'] = $node->nid;
+        } else {
+          $sql .= 'AND n.type = :type';
+          $args[':type'] = $node;
+        }
+        $args[':node'] = 'node';
+        $args[':field'] = $field;
+        $args[':relation'] = 'relation';
+        $result = db_query($sql, $args);
+        foreach ($result as $row) {
+          $references[$row->bundle][] = $row->eid;
+        }
+      }
+    }
+  }
+  return $references;
+}
+
+
+/**
+ * Apply array_filter() to an array recursively.
+ */
+function nodeaccess_relation_array_filter($input) {
+  foreach ($input as &$value) {
+    if (is_array($value)) {
+      $value = nodeaccess_relation_array_filter($value);
+    }
+  }
+  return array_filter($input);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+
+
+function nodeaccess_relation_form_relation_type_form_alter(&$form, $form_state) {
+  $data = NULL;
+  if (is_array($form_state['build_info']['args']) && array_key_exists('0', $form_state['build_info']['args']) && $form_state['build_info']['args'][0]->relation_type) { 
+    $data = nodeaccess_relation_field_settings('relation', $form_state['build_info']['args'][0]->relation_type);
+  }
+  $form['nodeaccess_relation'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Relation ACLs'),
+    '#tree' => TRUE,
+  );
+  $form['nodeaccess_relation']['referenced'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Grants from source bundles'),
+  );
+  $form['nodeaccess_relation']['referenced']['view'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('If the user has <em>view</em> access to the source entity'),
+    '#default_value' => isset($data['referenced']['view']) ? $data['referenced']['view'] : array(),
+    '#options' => array(
+      'view' => t('Inherit <em>view</em> access on all target node entities'),
+      'update' => t('Grant <em>update</em> access on all target node entities'),
+      'delete' => t('Grant <em>delete</em> access on all target node entities'),
+    ),
+    '#description' => t('These content access permissions will be granted on the target node entities to users that have VIEW access to at least one of the source bundle entities.'),
+  );
+  $form['nodeaccess_relation']['referenced']['update'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('If the user has <em>update</em> access to the source entity'),
+    '#default_value' => isset($data['referenced']['update']) ? $data['referenced']['update'] : array(),
+    '#options' => array(
+      'update' => t('Inherit <em>update</em> access on all target node entities'),
+      'view' => t('Grant <em>view</em> access on all target node entities'),
+      'delete' => t('Grant <em>delete</em> access on all target node entities'),
+    ),
+    '#description' => t('These content access permissions will be granted on the target node entitites to users that have UPDATE access to at least one of the source bundle entities.'),
+  );
+  $form['nodeaccess_relation']['referenced']['delete'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('If the user has <em>delete</em> access to the source entity'),
+    '#default_value' => isset($data['referenced']['delete']) ? $data['referenced']['delete'] : array(),
+    '#options' => array(
+      'delete' => t('Inherit <em>delete</em> access on all target node entities'),
+      'view' => t('Grant <em>view</em> access on all target node entities'),
+      'update' => t('Grant <em>update</em> access on all target node entities'),
+    ),
+    '#description' => t('These content access permissions will be granted on the target node entities to users that have DELETE access to at least one of the source bundle entities.'),
+  );
+  $form['nodeaccess_relation']['referenced']['published'] = array(
+    '#type' => 'select',
+    '#title' => t('Unpublished nodes'),
+    '#title_display' => 'none',
+    '#default_value' => isset($data['referenced']['published']) ? $data['referenced']['published'] : 0,
+    '#options' => array(
+      0 => t('Give these grants for published nodes only'),
+      1 => t('Give these grants for published and unpublished nodes'),
+    ),
+  );
+  $form['nodeaccess_relation']['author'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('Grants for author'),
+    '#default_value' => isset($data['author']) ? $data['author'] : array(),
+    '#options' => array(
+      'view' => t('View'),
+      'update' => t('Update'),
+      'delete' => t('Delete'),
+    ),
+    '#description' => t('These content access permissions will be granted to the authors of nodes.'),
+  );
+  $form['nodeaccess_relation']['author_published'] = array(
+    '#type' => 'select',
+    '#title' => t('Unpublished nodes'),
+    '#title_display' => 'none',
+    '#default_value' => isset($data['author_published']) ? $data['author_published'] : 0,
+    '#options' => array(
+      0 => t('Give these grants for published nodes only'),
+      1 => t('Give these grants for published and unpublished nodes'),
+    ),
+  );
+  $form['nodeaccess_relation']['all'] = array(
+    '#type' => 'checkboxes',
+    '#title' => t('Grants for all users'),
+    '#default_value' => isset($data['all']) ? $data['all'] : array(),
+    '#options' => array(
+      'view' => t('View'),
+    ),
+    '#description' => t('These content access permissions will be granted to all users.'),
+  );
+  $form['nodeaccess_relation']['all_published'] = array(
+    '#type' => 'select',
+    '#title' => t('Unpublished nodes'),
+    '#title_display' => 'none',
+    '#default_value' => isset($data['all_published']) ? $data['all_published'] : 0,
+    '#options' => array(
+      0 => t('Give these grants for published nodes only'),
+      1 => t('Give these grants for published and unpublished nodes'),
+    ),
+  );
+  $form['nodeaccess_relation']['unused'] = array(
+    '#type' => 'radios',
+    '#title' => t('When to set grants'),
+    '#default_value' => isset($data['unused']) ? $data['unused'] : 0,
+    '#options' => array(
+      0 => t('When the node reference field is in use'),
+      1 => t('Always'),
+    ),
+    '#description' => t('Determines whether to set grants when the field is not in use.'),
+  );
+  $form['nodeaccess_relation']['priority'] = array(
+    '#type' => 'weight',
+    '#title' => t('Priority'),
+    '#default_value' => isset($data['priority']) ? $data['priority'] : 0,
+    '#description' => t('It is recommended to always leave this set to 0.'),
+  );
+  $form['#submit'][] = 'nodeaccess_relation_form_relation_type_form_submit';
+}
+
+/**
+ * Extra submit function for Node reference field config.
+ */
+function nodeaccess_relation_form_relation_type_form_submit($form, &$form_state) {
+  $data = &$form_state['values']['nodeaccess_relation'];
+  $field_name = &$form_state['values']['relation_type'];
+  $bundle_name = 'relation'; 
+  $data['field_type'] =  $field_name;
+  nodeaccess_relation_field_settings($bundle_name, $field_name, $data);
+  nodeaccess_relation_check_cross_access();
+  $bundles = &$form_state['build_info']['args'][0]->source_bundles;
+  $types = array();
+  foreach ($bundles as $type) {
+    $this_type = explode(":",$type);
+    if ($this_type[0] == 'node') {
+      $types[] = $this_type[1];
+    } 
+  }
+  if ($types) {
+    $nodes = node_load_multiple(NULL, array('type' => $types));
+  }
+  if ($nodes) {
+    // Because the field settings have changed we should prompt for a full rebuild.
+    node_access_needs_rebuild(TRUE);
+  }
+}
+
+/**
+ * Add node grants in a way that prevents overriding previous iterations.
+ *
+ * @param &$grants
+ *  The grants array where the grant will be added.
+ * @param $realm
+ *  The realm of this grant.
+ * @param $gid
+ *  The grant ID.
+ * @param $priority
+ *  The grant priority.
+ * @param $settings
+ *  An settings array of boolean equivalent values with keys 'view', 'edit',
+ *  and 'delete'.
+ */
+function nodeaccess_relation_add_grant(&$grants, $realm, $gid, $priority, $settings) {
+  $key = $realm . $gid;
+  if (!isset($grants[$key])) {
+    // Setup the record.
+    $grants[$key] = array(
+      'realm' => $realm,
+      'gid' => $gid,
+      'priority' => $priority,
+      'grant_view' => 0,
+      'grant_update' => 0,
+      'grant_delete' => 0,
+    );
+  }
+  // Add the grants needed, so as not to override previous iterations.
+  if (isset($settings['view']) && $settings['view']) {
+    $grants[$key]['grant_view'] = 1;
+  }
+  if (isset($settings['update']) && $settings['update']) {
+    $grants[$key]['grant_update'] = 1;
+  }
+  if (isset($settings['delete']) && $settings['delete']) {
+    $grants[$key]['grant_delete'] = 1;
+  }
+  // Increase the priority if needed.
+  if ($priority > $grants[$key]['priority']) {
+    $grants[$key]['priority'] = $priority;
+  }
+}
+
+/**
+ * Implements hook_entity_insert().
+ */
+function nodeaccess_relation_entity_insert($entity, $type) {
+  if ($type == 'relation') {
+    nodeaccess_relation_invoke_update_access_records($entity);
+  }
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+function nodeaccess_relation_entity_update($entity, $type) {
+  if ($type == 'relation') {
+    nodeaccess_relation_invoke_update_access_records($entity);
+  }
+}
+
+/**
+ * Implements hook_entity_delete().
+ */
+function nodeaccess_relation_entity_delete($entity, $type) {
+  if ($type == 'relation') {
+    nodeaccess_relation_invoke_update_access_records($entity);
+  }
+  
+}
+
+/**
+ * Function to find all target nodes to act on 
+ * and manually call nodeaccess_relation_node_access_records
+ */
+function nodeaccess_relation_invoke_update_access_records($entity) {
+  $target_uids = nodeaccess_relation_get_referenced($entity->rid);
+  if (is_array($target_uids)) {
+    foreach ($target_uids as $nid=>$uid) {
+      // this is kind of hacky, we're manually injecting relation_type
+      // into the target node so we can still use hook_node_access_records
+      $node = node_load($nid);
+      $grants = nodeaccess_relation_update_access_records($node, $entity);  
+      node_access_write_grants($node, $grants, $realm = NULL, $delete = TRUE);
+    }
+  } else {
+     $grants = nodeaccess_relation_update_access_records($target_nodes, $entity);    
+     node_access_write_grants($target_nodes, $grants, $realm = NULL, $delete = TRUE); 
+  }
+} 
+
+/**
+ * Implements hook_node_access_records()
+ */
+
+function nodeaccess_relation_node_access_records($node) {
+  $relations = nodeaccess_relation_get_relations($node);
+  if (is_array($relations)) {
+    foreach ($relations as $relation_type=>$rids) {
+      // this is kind of hacky, we're manually injecting relation_type
+      // into the target node so we can still use hook_node_access_records
+      $entities = entity_load('relation', $rids);
+      foreach ($entities as $entity) {
+        $grants = nodeaccess_relation_update_access_records($node, $entity);
+        node_access_write_grants($node, $grants, $realm = NULL, $delete = TRUE);
+      }
+    } 
+  }
+  return $grants;
+}
+
+
+function nodeaccess_relation_update_access_records($node, $relation) {
+  $grants = array();
+  if (!$relation->relation_type) {
+    return false;
+    // @TODO if we got here through node_save w/o manually injecting relation_type
+    // we should find all relations where this node is target and update them 
+  } 
+  $field_data = nodeaccess_relation_field_settings('relation', $relation->relation_type);
+  if (!empty($field_data) && !empty($relation->endpoints)) {
+    foreach ($field_data as $field_name => &$data) {
+      if (!empty($data)) {
+        if (!empty($node->status) || !empty($data['referenced']['published'])) {
+          // Add referenced user grants.
+          $items = field_get_items('relation', $relation, 'endpoints');
+          if (!empty($items)) {
+            foreach ($items as &$endpoint) {
+              $uid = NULL; 
+              if ($endpoint['entity_type'] == 'user' && $endpoint['r_index'] == 0) {
+                $uid = $endpoint['entity_id'];
+                if ($uid && is_array($field_data['referenced'])) { 
+                  foreach (array_keys($field_data['referenced']) as $operation) {
+                    nodeaccess_relation_add_grant(
+                      $grants,
+                      'nodeaccess_relation_' . $operation,
+                    $endpoint['entity_id'],
+                      $field_data['priority'],
+                      $field_data['referenced'][$operation]
+                    );
+                  }
+                }
+              }
+            }
+          }
+
+          if (is_array($field_data) && array_key_exists('unused',$field_data) && array_key_exists('referenced',$field_data)) {
+            foreach (array_keys($field_data['referenced']) as $operation) {
+              // Add a dummy grant for node 0 to block other users' access.
+              nodeaccess_relation_add_grant(
+                $grants,
+                'nodeaccess_relation_' . $operation,
+                0,
+                $field_data['priority'],
+                $field_data['referenced'][$operation]
+              );
+            }
+          }
+
+        }
+
+        // If there are grants set, also add the author and view-all grants.
+        // These will fire for each non-empty nodeaccess_relation field,
+        // but redundant calls will be correctly handled by the helper function:
+        // nodeaccess_relation_add_grant().
+        if (!empty($grants)) {
+          if (!empty($node->status) || !empty($field_data['author_published'])) {
+            // Add author grants.
+            nodeaccess_relation_add_grant(
+              $grants,
+              'nodeaccess_relation_author',
+              $node->uid,
+              $field_data['priority'],
+              $field_data['author']
+            );
+          }
+          if (!empty($node->status) || !empty($field_data['all_published'])) {
+            // Add all grants.
+            nodeaccess_relation_add_grant(
+              $grants,
+              'nodeaccess_relation_all',
+              1,
+              $field_data['priority'],
+              $field_data['all']
+            );
+          }
+        }
+      }
+ 
+    }
+  }
+  // Flag that the cache is not to be relied upon.
+  variable_set('nodeaccess_relation_cache_needs_clear', TRUE);
+
+  if (!empty($grants)) {
+    return $grants;
+  }
+  return NULL;
+}
+
+/**
+ * Set and get relation field settings.
+ *
+ * @param $bundle_name
+ *   The name of the bundle.
+ * @param $field_name
+ *   The name of the field.
+ * @param $variable
+ *   If set will update the value of the settings for this field.
+ * @return
+ *   The stored or updated value of the settings for this field.
+ */
+function nodeaccess_relation_field_settings($bundle_name, $field_name = NULL, $variable = NULL) {
+  $data = variable_get('nodeaccess_relation', array());
+  if (!is_null($field_name)) {
+    if (isset($variable)) {
+      $data[$bundle_name][$field_name] = $variable;
+      variable_set('nodeaccess_relation', $data);
+    }
+    if (isset($data[$bundle_name][$field_name])) {
+      return $data[$bundle_name][$field_name];
+    }
+  }
+  elseif (isset($data[$bundle_name])) {
+    return $data[$bundle_name];
+  }
+}
+
+/**
+ * Check for cross access.
+ *
+ * Cross access is our term for when a referenced node gives a different kind
+ * of access than the one that the reference is tested for. e.g. if a field
+ * gave users 'view' access to the node when they have 'update' access on the
+ * reference. This requires extra checking in
+ * nodeaccess_relation_node_grants(), so this is how we inform that
+ * function that this needs to be done.
+ */
+function nodeaccess_relation_check_cross_access() {
+  $data = variable_get('nodeaccess_relation', array());
+  $cross_access = array(
+    'view' => FALSE,
+    'update' => FALSE,
+    'delete' => FALSE,
+  );
+  foreach ($data as $type_name => $type_data) {
+    foreach ($type_data as $field_name => $field_data) {
+      foreach (array_keys($cross_access) as $check) {
+        foreach (array_keys($cross_access) as $grant) {
+          if ($check != $grant && $field_data['referenced'][$check][$grant]) {
+            $cross_access[$grant] = TRUE;
+          }
+        }
+      }
+    }
+  }
+  variable_set('nodeaccess_relation_cross_access', $cross_access);
+}
+
+/**
+ * Implements of hook_node_access_explain().
+ *
+ * This gives the Devel module nice information to display when
+ * debugging node grants.
+ */
+function nodeaccess_relation_node_access_explain($row) {
+  if (
+    in_array(
+      $row->realm,
+      array(
+        'nodeaccess_relation_view',
+        'nodeaccess_relation_update',
+        'nodeaccess_relation_delete',
+        'nodeaccess_relation_author',
+        'nodeaccess_relation_all'
+      )
+    )
+  ) {
+
+    $ops = array();
+    foreach (array('view', 'update', 'delete') as $op) {
+      $gop = 'grant_' . $op;
+      if (!empty($row->$gop)) {
+        $ops[] = $op;
+      }
+    }
+
+    if (!empty($ops)) {
+      $do = implode('/', $ops);
+      $account = user_load($row->gid);
+      switch ($row->realm) {
+        case 'nodeaccess_relation_view':
+        case 'nodeaccess_relation_update':
+        case 'nodeaccess_relation_delete':
+          return t(
+            'Users !name may !do this node',
+            array('!name' => $account->name, '!do' => $do)
+          );
+        case 'nodeaccess_relation_author':
+          $account = user_load($row->gid);
+          return t(
+            'Node author %name may !do this node',
+            array('%name' => $account->name, '!do' => $do)
+          );
+        case 'nodeaccess_relation_all':
+          return t(
+            'All users may !do this node',
+            array('!do' => $do)
+          );
+      }
+    }
+
+  }
+}
+
+/**
+ * Implements hook_field_delete_instance().
+ */
+function nodeaccess_relation_field_delete_instance($instance) {
+  $data = variable_get('nodeaccess_relation', array());
+  if (isset($data[$instance['bundle']][$instance['field_name']])) {
+    unset($data[$instance['bundle']][$instance['field_name']]);
+    if (empty($data[$instance['bundle']])) {
+      unset($data[$instance['bundle']]);
+    }
+    variable_set('nodeaccess_relation', $data);
+  }
+}
