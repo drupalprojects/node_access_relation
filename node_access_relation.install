@@ -1,0 +1,46 @@
+<?php 
+// $Id$ node_access_relation.install,v 1.0 2012/06/14 16:48:35 andyhawks Exp $
+
+/**
+ * @file
+ * Relation+ACL Module
+ * Customize Access Controls using Relation + ACL
+ */
+
+/**
+ * Implements hook_requirements().
+ */
+function node_acces_relation_requirements() {
+  $requirements = array();
+  if (!module_exists('relation') && !module_exists('acl')) {
+    $t = get_t();
+    $requirements['node_acces_relation'] = array(
+      'title' => $t('Relation and ACL modules'),
+      'severity' => REQUIREMENT_ERROR,
+      'description' => $t('You need the Relation and ACL modules.'),
+    );
+  }
+  return $requirements;
+}
+
+function node_acces_relation_install() {
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function node_acces_relation_uninstall() {
+  // Remove variables.
+  variable_del('node_acces_relation');
+  variable_del('node_acces_relation_cache_needs_clear');
+  variable_del('node_acces_relation_cross_access');
+
+  // Old variables.
+  variable_del('node_acces_relation_priority');
+  variable_del('node_acces_relation_author_view');
+  variable_del('node_acces_relation_author_update');
+  variable_del('node_acces_relation_author_delete');
+}
+
+function node_acces_relation_disable() {
+}    
