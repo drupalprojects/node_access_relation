@@ -17,13 +17,14 @@ bundle in a directional relation. Checks view, update, and delete grant
 operations, and can pass those on to the target bundle relation content, or 
 trigger a different grant configuration according to settings.
 
-Project page: http://drupal.org/project/node_access_relation.
+NOTE: This is a sandbox project and under very active development. 
+
+Project page: http://drupal.org/sandbox/andyhawks/1594688
 
 
 REQUIREMENTS
 ------------
-http://drupal.org/project/entityreference
-http://drupal.org/project/references
+http://drupal.org/project/relation
 
 
 INSTALLATION
