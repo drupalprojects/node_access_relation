@@ -545,7 +545,7 @@ function node_access_relation_form_relation_type_form_alter(&$form, $form_state)
  * Extra submit function for Node reference field config.
  */
 function node_access_relation_form_relation_type_form_submit($form, &$form_state) {
-  if (!$form_state['values']['dirctional'] == 0) {
+  if (!$form_state['values']['directional'] == 0) {
     $form_state['values']['node_access_relation'] = NULL;
   }
   $data = &$form_state['values']['node_access_relation'];
@@ -567,7 +567,7 @@ function node_access_relation_form_relation_type_form_submit($form, &$form_state
   }
   if ($nodes) {
     // Because the field settings have changed we should prompt for a full rebuild.
-    node_access_needs_rebuild(TRUE);
+    node_access_rebuild(TRUE);
   }
 }
 
@@ -821,8 +821,8 @@ function node_access_relation_check_cross_access() {
   foreach ($data as $type_name => $type_data) {
     foreach ($type_data as $field_name => $field_data) {
       foreach (array_keys($cross_access) as $check) {
-        foreach (array_keys($cross_access) as $grant) {
-          if ($check != $grant && $field_data['referenced'][$check][$grant]) {
+        foreach (array_keys($cross_access) as $grant) { 
+          if ($check != $grant && array_key_exists('referened', $field_data) && $field_data['referenced'][$check][$grant]) {
             $cross_access[$grant] = TRUE;
           }
         }
