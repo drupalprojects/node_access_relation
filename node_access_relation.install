@@ -1,15 +1,15 @@
-<?php 
+<?php
 /**
  * @file
  * Node Access Relation Module.
- * Customize Access Controls using Relation. 
+ * Customize Access Controls using Relation.
  */
 /**
  * Implements hook_requirements().
  */
 function node_access_relation_requirements() {
   $requirements = array();
-  if (!module_exists('relation'))) {
+  if (!module_exists('relation')) {
     $t = get_t();
     $requirements['node_access_relation'] = array(
       'title' => $t('Relation module'),
@@ -46,4 +46,4 @@ function node_access_relation_uninstall() {
  * Implements hook_disable().
  */
 function node_access_relation_disable() {
-}    
+}

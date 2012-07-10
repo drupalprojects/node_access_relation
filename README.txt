@@ -9,7 +9,7 @@ CONTENTS OF THIS FILE
   * Installation
   * Usage
   
-
+ 
 INTRODUCTION
 ------------
 Gives content access permissions to users if they are referenced as a source
@@ -37,12 +37,12 @@ http://drupal.org/documentation/install/modules-themes/modules-7
 USAGE
 -----
 Create a new Relation Type. Ensure it is a Directional Relation to set node
-access relation controls. Set the source bundle as a user and the target bundle as 
-a node. Set the node access permissions for the target node bundle as desired. Source 
-users should now have acces to target node bundles based on the node access permissions. 
+access relation controls. Set the source bundle as a user and the target bundle 
+as a node. Set the node access permissions for the target node bundle as 
+desired. Source users should now have acces to target node bundles based on the 
 
-Additional linked relations where the target node bundle used above is the source can
-now be created with permissions inherited through node_access_relation.  
+Additional linked relations where the target node bundle used above is the source
+can now be created with permissions inherited through node_access_relation.  
 
 For detailed instructions on using Relations see: 
 https://drupal.org/node/1274796

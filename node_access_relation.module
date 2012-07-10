@@ -14,8 +14,8 @@ function node_access_relation_node_access($node, $op, $account) {
     foreach ($relations as $type => $rid) {
       $field_data = node_access_relation_field_settings('relation');
       if (!empty($field_data[$type])) {
-        // Need to loop through everything and complete set of grants here.
-        // And cache.
+        // needtoloop through everything and complete complete set of grants here
+        // and cache
         foreach ($field_data[$type] as $field_name => &$data) {
           if (!empty($data)) {
             // Add referenced user grants.
@@ -79,14 +79,14 @@ function node_access_relation_calculate_grants(&$grants, $op, $account) {
   // completed and therefore stored in cache. An iteration is not considered
   // complete when:
   // - Recursion occurs on the same account/reference/operation combo. This
-  // iteration will assume FALSE to prevent an endless loop, but this means
-  // the data should not be relied upon in future calls.
+  //   iteration will assume FALSE to prevent an endless loop, but this means
+  //   the data should not be relied upon in future calls.
   // - A child iteration is not complete (because of the previous reason).
   $complete = TRUE;
   // $do_cache is similar to $complete except it doesn't affect the static
   // variable $child_completed.  $do_cache is set to FALSE when:
-  //  - This function is being called on behalf of a parent iteration.  The
-  //  cache should be based on the parent's calculations, not this iteration.
+  // - This function is being called on behalf of a parent iteration.  The
+  //   cache should be based on the parent's calculations, not this iteration.
   $do_cache = TRUE;
 
   // Get info about whether we need cross access checking for this $op.
@@ -134,9 +134,10 @@ function node_access_relation_calculate_grants(&$grants, $op, $account) {
       $reference_node = node_access_relation_node_loadbypass($reference);
       if (!empty($reference_node)) {
         // Reference loaded successfully.
+
         // Check each $operation on the referenced node.
         foreach ($operations as $operation) {
-          // Set static $parent_reference variable to the reference being done.
+          // Set the static $parent_reference variable to the reference being done.
           $parent_reference = $reference;
           if (!isset($known[$operation])) {
             // We're missing an $operation or two, proceed with calculations.
@@ -173,12 +174,16 @@ function node_access_relation_calculate_grants(&$grants, $op, $account) {
             // Grab the value from known data.
             $node_access = $known[$operation];
           }
+          print_r($operation);
+          print_r($node_access);
           // Check if the node_access() return value is TRUE.
           if ($node_access) {
             // Add the reference as a grant on the relevant realm.
             $rights['node_access_relation_' . $operation][] = $reference;
-            // Nothing more we need to do for this reference.
-            break;
+//            if (!$cross_access[$op]) {
+              // Nothing more we need to do for this reference.
+              break;
+//            }
           }
         }
       }
@@ -204,7 +209,7 @@ function node_access_relation_calculate_grants(&$grants, $op, $account) {
     // We have grants worked out completely, so add them to the caches.
     // It is unsafe to store incomplete grants in any caches.
     $grants[$account->uid][$op] = $rights;
-    // Use drupal cache to minimise this function.
+    // Use drupal cache to minimise how often this function needs to work out the grants.
     cache_set('node_access_relation_' . $account->uid . '_' . $op, $grants[$account->uid][$op]);
   }
   else {
@@ -217,7 +222,7 @@ function node_access_relation_calculate_grants(&$grants, $op, $account) {
 }
 
 /**
- * Byass regular node_load.
+ * Byass regular node_load
  */
 function node_access_relation_node_loadbypass($nid) {
 
@@ -245,7 +250,7 @@ function node_access_relation_get_referenced($eid = NULL, $nid = NULL, &$referen
         $args = array();
         // @todo: This !empty() can eventually be removed.
         if (!empty($type) && $type == 'relation') {
-          // Get a list of target nodes from all the matching relations.
+          // this sql needs to bring up a list of target nodes from all teh matching relations
           $sql = 'SELECT DISTINCT fdes.endpoints_entity_id AS nid, fdet.endpoints_entity_id AS uid, fdet.endpoints_entity_type as type '
             . 'FROM {field_data_endpoints} fdes '
             . 'INNER JOIN {field_data_endpoints} fdet ON '
@@ -261,7 +266,7 @@ function node_access_relation_get_referenced($eid = NULL, $nid = NULL, &$referen
           $args[':node'] = 'node';
         }
         elseif (!is_null($nid)) {
-          // @TODO: Fix this.
+          // fix this
           $sql .= 'AND (fdes.endpoints_entity_id = :nid AND fdes.endpoints_entity_type = :node) ';
           $args[':nid'] = $nid;
           $args[':node'] = 'node';
@@ -305,7 +310,7 @@ function node_access_relation_get_referenced($eid = NULL, $nid = NULL, &$referen
 }
 
 /**
- * Get all relations where nid is endpoint.
+ * Get all relations where nid is endpoint
  */
 function node_access_relation_get_relations($node = NULL) {
   $references = array();
@@ -319,7 +324,7 @@ function node_access_relation_get_relations($node = NULL) {
         $args = array();
         // @todo: This !empty() can eventually be removed.
         if (!empty($type) && $type == 'relation') {
-          // Get a list of target nodes from all teh matching relations.
+          // this sql needs to bring up a list of target nodes from all teh matching relations
           $sql = 'SELECT DISTINCT fde.entity_id AS eid, fde.bundle '
           . 'FROM {field_data_endpoints} fde '
           . 'INNER JOIN {node} n ON n.nid = fde.endpoints_entity_id '
@@ -364,6 +369,8 @@ function node_access_relation_array_filter($input) {
 /**
  * Implements hook_form_FORM_ID_alter().
  */
+
+
 function node_access_relation_form_relation_type_form_alter(&$form, $form_state) {
   $data = NULL;
   if (is_array($form_state['build_info']['args']) && array_key_exists('0', $form_state['build_info']['args']) && $form_state['build_info']['args'][0]->relation_type) {
@@ -432,7 +439,7 @@ function node_access_relation_form_relation_type_form_alter(&$form, $form_state)
         ':input[name="directional"]' => array('checked' => FALSE),
       ),
     ),
-    '#description' => t('These content access permissions will be granted on the target node entities to users that have DELETE access to at least one of the source bundle entities.'),
+      '#description' => t('These content access permissions will be granted on the target node entities to users that have DELETE access to at least one of the source bundle entities.'),
   );
   $form['node_access_relation']['referenced']['published'] = array(
     '#type' => 'select',
@@ -477,7 +484,7 @@ function node_access_relation_form_relation_type_form_submit($form, &$form_state
     $nodes = node_load_multiple(NULL, array('type' => $types));
   }
   if ($nodes) {
-    // Because the field settings have changed we do a full rebuild.
+    // Because the field settings have changed we should prompt for a full rebuild.
     node_access_rebuild(TRUE);
   }
 }
@@ -561,7 +568,7 @@ function node_access_relation_invoke_update_access_records($entity) {
   $target_uids = node_access_relation_get_referenced($entity->rid);
   if (is_array($target_uids)) {
     foreach ($target_uids as $nid => $uid) {
-      // Manually inject relation_type into the target node.
+      // Manually inject relation_type into  target node.
       $node = node_load($nid);
       $grants = node_access_relation_update_access_records($node, $entity);
       node_access_write_grants($node, $grants, $realm = NULL, $delete = TRUE);
@@ -581,7 +588,7 @@ function node_access_relation_node_access_records($node) {
   $relations = node_access_relation_get_relations($node);
   if (is_array($relations)) {
     foreach ($relations as $relation_type => $rids) {
-      // Manually inject relation_type into the target node.
+      // Manually inject relation_type into  target node.
       $entities = entity_load('relation', $rids);
       foreach ($entities as $entity) {
         $grants = node_access_relation_update_access_records($node, $entity);
