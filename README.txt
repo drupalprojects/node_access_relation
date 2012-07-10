@@ -41,8 +41,9 @@ access relation controls. Set the source bundle as a user and the target bundle
 as a node. Set the node access permissions for the target node bundle as 
 desired. Source users should now have acces to target node bundles based on the 
 
-Additional linked relations where the target node bundle used above is the source
-can now be created with permissions inherited through node_access_relation.  
+Additional linked relations where the target node bundle used above is the 
+source can now be created with permissions inherited through 
+node_access_relation.  
 
 For detailed instructions on using Relations see: 
 https://drupal.org/node/1274796
