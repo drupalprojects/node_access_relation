@@ -485,15 +485,15 @@ function node_access_relation_form_relation_type_form_submit($form, &$form_state
 /**
  * Add node grants in a way that prevents overriding previous iterations.
  *
- * @param $grants array
+ * @param array $grants
  *   The grants array where the grant will be added.
- * @param $realm string
+ * @param string $realm
  *   The realm of this grant.
- * @param $gid string
+ * @param string $gid
  *   The grant ID.
- * @param $priority string
+ * @param string $priority
  *   The grant priority.
- * @param $settings array
+ * @param array $settings
  *   An settings array of boolean equivalent values with keys 'view', 'edit',
  *   and 'delete'.
  */
@@ -654,15 +654,15 @@ function node_access_relation_update_access_records($node, $relation) {
 /**
  * Set and get relation field settings.
  *
- * @param $bundle_name string
+ * @param string $bundle_name
  *   The name of the bundle.
- * @param $field_name string
+ * @param string $field_name
  *   The name of the field.
- * @param $variable string
+ * @param string $variable
  *   If set will update the value of the settings for this field.
+ *
  * @return array
  *   The stored or updated value of the settings for this field.
- *
  */
 function node_access_relation_field_settings($bundle_name, $field_name = NULL, $variable = NULL) {
   $data = variable_get('node_access_relation', array());
