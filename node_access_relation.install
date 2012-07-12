@@ -6,28 +6,6 @@
  */
 
 /**
- * Implements hook_requirements().
- */
-function node_access_relation_requirements() {
-  $requirements = array();
-  if (!module_exists('relation')) {
-    $t = get_t();
-    $requirements['node_access_relation'] = array(
-      'title' => $t('Relation module'),
-      'severity' => REQUIREMENT_ERROR,
-      'description' => $t('Node Access Relation requires the Relation module.'),
-    );
-  }
-  return $requirements;
-}
-
-/**
- * Implements hook_install().
- */
-function node_access_relation_install() {
-}
-
-/**
  * Implements hook_uninstall().
  */
 function node_access_relation_uninstall() {
@@ -41,10 +19,4 @@ function node_access_relation_uninstall() {
   variable_del('node_access_relation_author_view');
   variable_del('node_access_relation_author_update');
   variable_del('node_access_relation_author_delete');
-}
-
-/**
- * Implements hook_disable().
- */
-function node_access_relation_disable() {
 }

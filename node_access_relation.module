@@ -25,8 +25,6 @@ function node_access_relation_node_access($node, $op, $account) {
 
                 foreach ($items as &$endpoint) {
 
-                  $uid = NULL;
-
                   if ($endpoint['entity_type'] == 'user' && $endpoint['r_index'] == 0 && $account->uid == $endpoint['entity_id']) {
                     if (array_key_exists($op, $field_data[$type]['referenced'])) {
                       if ($field_data[$type]['referenced'][$op][$op] == $op) {
@@ -221,13 +219,18 @@ function node_access_relation_calculate_grants(&$grants, $op, $account) {
  */
 function node_access_relation_node_loadbypass($nid) {
 
-  $result = db_query('SELECT nid, status, type, uid FROM {node} n WHERE nid = :nid', array(':nid' => $nid));
+  $result = db_select('node', 'n')
+    ->fields('n', array('nid', 'status', 'type', 'uid'))
+    ->condition('nid', $nid, '=')
+    ->execute();
+
   foreach ($result as $record) {
     $node->nid = $record->nid;
     $node->status = $record->status;
     $node->type = $record->type;
     $node->uid = $record->uid;
   }
+
   return $node;
 }
 
@@ -245,34 +248,36 @@ function node_access_relation_get_referenced($eid = NULL, $nid = NULL, &$referen
         $args = array();
         // @TODO: This !empty() can eventually be removed.
         if (!empty($type) && $type == 'relation') {
-          // Bring up a list of target nodes from all teh matching relations.
-          $sql = 'SELECT DISTINCT fdes.endpoints_entity_id AS nid, fdet.endpoints_entity_id AS uid, fdet.endpoints_entity_type as type '
-            . 'FROM {field_data_endpoints} fdes '
-            . 'INNER JOIN {field_data_endpoints} fdet ON '
-            . '(fdet.entity_id = fdes.entity_id AND fdet.entity_type = fdes.entity_type AND fdet.bundle = fdes.bundle AND fdet.endpoints_r_index = 0) '
-            . 'INNER JOIN {node} n ON n.nid = fdes.endpoints_entity_id '
-            . 'INNER JOIN {relation} r ON fdet.entity_id = r.rid AND r.relation_type = :field '
-            . 'INNER JOIN {relation_bundles} rb ON (fdet.bundle = rb.relation_type AND rb.bundle = n.type) '
-            . 'WHERE fdes.entity_type = :relation AND fdes.bundle = :field AND fdes.endpoints_r_index > 0 ';
+
+          $query = db_select('field_data_endpoints', 'fdes');
+          $query->innerJoin('field_data_endpoints', 'fdet',
+              'fdet.entity_id = fdes.entity_id AND fdet.entity_type = fdes.entity_type AND fdet.bundle = fdes.bundle AND fdet.endpoints_r_index = 0');
+          $query->innerJoin('node', 'n', 'n.nid = fdes.endpoints_entity_id');
+          $query->innerJoin('relation', 'r', 'fdet.entity_id = r.rid AND r.relation_type = :field', array(':field' => $field));
+          $query->innerJoin('relation_bundles', 'rb', 'fdet.bundle = rb.relation_type AND rb.bundle = n.type');
+
+          $query->addField('fdes', 'endpoints_entity_id', 'nid');
+          $query->addField('fdet', 'endpoints_entity_id', 'uid');
+          $query->addField('fdet', 'endpoints_entity_type', 'type');
+
+          $query->condition('fdes.entity_type', 'relation', '=');
+          $query->condition('fdes.bundle', ':field', '=', array(':field' => $field));
+          $query->condition('fdes.endpoints_r_index', 0, '>');
+
         }
         if (!is_null($eid)) {
-          $sql .= 'AND (fdes.entity_id = :eid AND fdes.endpoints_entity_type = :node) ';
-          $args[':eid'] = $eid;
-          $args[':node'] = 'node';
+          $query->condition('fdes.entity_id', ':eid', '=', array(':eid' => $eid));
+          $query->condition('fdes.endpoints_entity_type', 'node', '=');
         }
         elseif (!is_null($nid)) {
-          // @TODO: Fix.
-          $sql .= 'AND (fdes.endpoints_entity_id = :nid AND fdes.endpoints_entity_type = :node) ';
-          $args[':nid'] = $nid;
-          $args[':node'] = 'node';
+          $query->condition('fdes.endpoints_entity_id', ':nid', '=', array(':nid' => $nid));
+          $query->condition('fdes.endpoints_entity_type', 'node', '=');
         }
         else {
-          $sql .= 'AND fdes.entity_id IS NOT NULL ';
+          $query->isNotNull('fdes.entity_id');
         }
-        $args[':field'] = $field;
-        $args[':relation'] = 'relation';
 
-        $result = db_query($sql, $args);
+        $result = $query->execute();
 
         foreach ($result as $row) {
 
@@ -320,25 +325,29 @@ function node_access_relation_get_relations($node = NULL) {
         // @TODO: This !empty() can eventually be removed.
         if (!empty($type) && $type == 'relation') {
           // Bring up a list of target nodes from all teh matching relations.
-          $sql = 'SELECT DISTINCT fde.entity_id AS eid, fde.bundle '
-          . 'FROM {field_data_endpoints} fde '
-          . 'INNER JOIN {node} n ON n.nid = fde.endpoints_entity_id '
-          . 'INNER JOIN {relation} r ON fde.entity_id = r.rid AND r.relation_type = :field '
-          . 'INNER JOIN {relation_bundles} rb ON (fde.bundle = rb.relation_type AND rb.bundle = n.type) '
-          . 'WHERE fde.entity_type = :relation AND fde.bundle = :field AND fde.endpoints_r_index > 0 and fde.endpoints_entity_type = :node ';
+          $query = db_select('field_data_endpoints', 'fde');
+          $query->innerJoin('node', 'n', 'n.nid = fde.endpoints_entity_id');
+          $query->innerJoin('relation', 'r', 'fde.entity_id = r.rid AND r.relation_type = :field', array(':field' => $field));
+          $query->innerJoin('relation_bundles', 'rb', 'fde.bundle = rb.relation_type AND rb.bundle = n.type');
+
+          $query->addField('fde', 'entity_id', 'eid');
+          $query->addField('fde', 'bundle', 'bundle');
+
+          $query->condition('fde.entity_type', 'relation', '=');
+          $query->condition('fdes.bundle', ':field', '=', array(':field' => $field));
+          $query->condition('fdes.endpoints_r_index', 0, '>');
+          $query->condition('fdes.endpoints_entity_type', 'node', '=');
+
         }
         if (is_object($node) && $node->nid) {
-          $sql .= 'AND fde.endpoints_entity_id = :nid ';
-          $args[':nid'] = $node->nid;
+          $query->condition('fde.endpoints_entity_id', ':nid', '=', array(':nid' => $nid));
         }
         else {
-          $sql .= 'AND n.type = :type';
-          $args[':type'] = $node;
+          $query->condition('n.type', ':type', '=', array(':type' => $node));
         }
-        $args[':node'] = 'node';
-        $args[':field'] = $field;
-        $args[':relation'] = 'relation';
-        $result = db_query($sql, $args);
+
+        $result = $query->execute();
+
         foreach ($result as $row) {
           $references[$row->bundle][] = $row->eid;
         }
@@ -453,7 +462,7 @@ function node_access_relation_form_relation_type_form_alter(&$form, $form_state)
 }
 
 /**
- * Extra submit function for Node reference field config.
+ * Extra submit function for Relation Type access config.
  */
 function node_access_relation_form_relation_type_form_submit($form, &$form_state) {
   if (!$form_state['values']['directional'] == 0) {
