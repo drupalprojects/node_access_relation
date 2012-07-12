@@ -28,9 +28,6 @@ function node_access_relation_node_access($node, $op, $account) {
                   if ($endpoint['entity_type'] == 'user' && $endpoint['r_index'] == 0 && $account->uid == $endpoint['entity_id']) {
                     if (array_key_exists($op, $field_data[$type]['referenced'])) {
                       if ($field_data[$type]['referenced'][$op][$op] == $op) {
-                        if ($op != 'delete') {
-                          return NODE_ACCESS_ALLOW;
-                        }
                       }
                       else {
                         return NODE_ACCESS_DENY;
