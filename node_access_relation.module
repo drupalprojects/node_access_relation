@@ -331,9 +331,9 @@ function node_access_relation_get_relations($node = NULL) {
           $query->addField('fde', 'bundle', 'bundle');
 
           $query->condition('fde.entity_type', 'relation', '=');
-          $query->condition('fdes.bundle', ':field', '=', array(':field' => $field));
-          $query->condition('fdes.endpoints_r_index', 0, '>');
-          $query->condition('fdes.endpoints_entity_type', 'node', '=');
+          $query->condition('fde.bundle', ':field', '=', array(':field' => $field));
+          $query->condition('fde.endpoints_r_index', 0, '>');
+          $query->condition('fde.endpoints_entity_type', 'node', '=');
 
         }
         if (is_object($node) && $node->nid) {
