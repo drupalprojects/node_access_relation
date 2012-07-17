@@ -337,10 +337,10 @@ function node_access_relation_get_relations($node = NULL) {
 
         }
         if (is_object($node) && $node->nid) {
-          $query->condition('fde.endpoints_entity_id', ':nid', '=', array(':nid' => $nid));
+          $query->condition('fde.endpoints_entity_id', $node->nid, '=');
         }
         else {
-          $query->condition('n.type', ':type', '=', array(':type' => $node));
+          $query->condition('n.type', $node, '=');
         }
 
         $result = $query->execute();
