@@ -583,6 +583,7 @@ function node_access_relation_invoke_update_access_records($entity) {
  * Implements hook_node_access_records().
  */
 function node_access_relation_node_access_records($node) {
+  $grants = array();
   $relations = node_access_relation_get_relations($node);
   if (is_array($relations)) {
     foreach ($relations as $relation_type => $rids) {
