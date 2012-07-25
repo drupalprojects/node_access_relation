@@ -28,6 +28,7 @@ function node_access_relation_node_access($node, $op, $account) {
                   if ($endpoint['entity_type'] == 'user' && $endpoint['r_index'] == 0 && $account->uid == $endpoint['entity_id']) {
                     if (array_key_exists($op, $field_data[$type]['referenced'])) {
                       if ($field_data[$type]['referenced'][$op][$op] == $op) {
+                        return NODE_ACCESS_ALLOW;
                       }
                       else {
                         return NODE_ACCESS_DENY;
@@ -167,8 +168,6 @@ function node_access_relation_calculate_grants(&$grants, $op, $account) {
             // Grab the value from known data.
             $node_access = $known[$operation];
           }
-          print_r($operation);
-          print_r($node_access);
           // Check if the node_access() return value is TRUE.
           if ($node_access) {
             // Add the reference as a grant on the relevant realm.
@@ -258,16 +257,16 @@ function node_access_relation_get_referenced($eid = NULL, $nid = NULL, &$referen
           $query->addField('fdet', 'endpoints_entity_type', 'type');
 
           $query->condition('fdes.entity_type', 'relation', '=');
-          $query->condition('fdes.bundle', ':field', '=', array(':field' => $field));
+          $query->condition('fdes.bundle', $field, '=');
           $query->condition('fdes.endpoints_r_index', 0, '>');
 
         }
         if (!is_null($eid)) {
-          $query->condition('fdes.entity_id', ':eid', '=', array(':eid' => $eid));
+          $query->condition('fdes.entity_id', $eid, '=');
           $query->condition('fdes.endpoints_entity_type', 'node', '=');
         }
         elseif (!is_null($nid)) {
-          $query->condition('fdes.endpoints_entity_id', ':nid', '=', array(':nid' => $nid));
+          $query->condition('fdes.endpoints_entity_id', $nid, '=');
           $query->condition('fdes.endpoints_entity_type', 'node', '=');
         }
         else {
@@ -331,7 +330,7 @@ function node_access_relation_get_relations($node = NULL) {
           $query->addField('fde', 'bundle', 'bundle');
 
           $query->condition('fde.entity_type', 'relation', '=');
-          $query->condition('fde.bundle', ':field', '=', array(':field' => $field));
+          $query->condition('fde.bundle', $field, '=');
           $query->condition('fde.endpoints_r_index', 0, '>');
           $query->condition('fde.endpoints_entity_type', 'node', '=');
 
@@ -344,7 +343,6 @@ function node_access_relation_get_relations($node = NULL) {
         }
 
         $result = $query->execute();
-
         foreach ($result as $row) {
           $references[$row->bundle][] = $row->eid;
         }
@@ -378,7 +376,18 @@ function node_access_relation_form_relation_type_form_alter(&$form, $form_state)
 
   $form['directional']['#description'] .= t(' A directional relation is required in order to grant content access. To configure content access for this relation you must first make this a directional relation.');
 
-  $form['node_access_relation']['referenced'] = array(
+ $form['node_access_relation'] = array(
+    '#type' => 'fieldset',
+    '#title' => t(''),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+    '#states' => array(
+      '!visible' => array(
+        ':input[name="directional"]' => array('checked' => FALSE),
+      ),
+    ),
+  );
+    $form['node_access_relation']['referenced'] = array(
     '#type' => 'fieldset',
     '#title' => t('Content Access via Node Access Relation'),
     '#collapsible' => TRUE,
@@ -456,22 +465,23 @@ function node_access_relation_form_relation_type_form_alter(&$form, $form_state)
     ),
   );
   $form['#submit'][] = 'node_access_relation_form_relation_type_form_submit';
+
 }
 
 /**
  * Extra submit function for Relation Type access config.
  */
 function node_access_relation_form_relation_type_form_submit($form, &$form_state) {
-  if (!$form_state['values']['directional'] == 0) {
-    $form_state['values']['node_access_relation'] = NULL;
+  if ($form_state['values']['directional'] == 0) {
+    $form_state['values']['referenced'] = NULL;
   }
-  $data = &$form_state['values']['node_access_relation'];
+  $data['referenced'] = &$form_state['values']['referenced'];
   $field_name = &$form_state['values']['relation_type'];
   $bundle_name = 'relation';
   $data['field_type'] = $field_name;
   node_access_relation_field_settings($bundle_name, $field_name, $data);
   node_access_relation_check_cross_access();
-  $bundles = &$form_state['build_info']['args'][0]->source_bundles;
+  $bundles = &$form_state['build_info']['args'][0]->target_bundles;
   $types = array();
   foreach ($bundles as $type) {
     $this_type = explode(":", $type);
@@ -480,11 +490,15 @@ function node_access_relation_form_relation_type_form_submit($form, &$form_state
     }
   }
   if ($types) {
-    $nodes = node_load_multiple(NULL, array('type' => $types));
-  }
-  if ($nodes) {
+    $nodes = db_select('node', 'n')
+      ->fields('n', array('nid'))
+      ->condition('n.type', $types, 'IN')
+      ->execute()
+      ->fetchAssoc();
+    if ($nodes) {
     // Because the field settings have changed we should rebuild.
-    node_access_rebuild(TRUE);
+      node_access_rebuild(TRUE);
+    }
   }
 }
 
@@ -708,7 +722,7 @@ function node_access_relation_check_cross_access() {
     foreach ($type_data as $field_name => $field_data) {
       foreach (array_keys($cross_access) as $check) {
         foreach (array_keys($cross_access) as $grant) {
-          if ($check != $grant && array_key_exists('referened', $field_data) && $field_data['referenced'][$check][$grant]) {
+          if ($check != $grant && array_key_exists('referenced', $field_data) && $field_data['referenced'][$check][$grant]) {
             $cross_access[$grant] = TRUE;
           }
         }
