@@ -3,3 +3,4 @@ description = "Customize Access Controls to Nodes using Relations"
 package = "Relation"
 core = 7.x
 dependencies[]="relation"
+dependencies[]="relation_ui"

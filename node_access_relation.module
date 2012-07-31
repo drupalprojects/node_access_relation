@@ -368,7 +368,7 @@ function node_access_relation_array_filter($input) {
 /**
  * Implements hook_form_FORM_ID_alter().
  */
-function node_access_relation_form_relation_type_form_alter(&$form, $form_state) {
+function node_access_relation_form_relation_ui_type_form_alter(&$form, $form_state) {
   $data = NULL;
   if (is_array($form_state['build_info']['args']) && array_key_exists('0', $form_state['build_info']['args']) && $form_state['build_info']['args'][0]->relation_type) {
     $data = node_access_relation_field_settings('relation', $form_state['build_info']['args'][0]->relation_type);
@@ -464,14 +464,14 @@ function node_access_relation_form_relation_type_form_alter(&$form, $form_state)
       ),
     ),
   );
-  $form['#submit'][] = 'node_access_relation_form_relation_type_form_submit';
+  $form['#submit'][] = 'node_access_relation_form_relation_ui_type_form_submit';
 
 }
 
 /**
  * Extra submit function for Relation Type access config.
  */
-function node_access_relation_form_relation_type_form_submit($form, &$form_state) {
+function node_access_relation_form_relation_ui_type_form_submit($form, &$form_state) {
   if ($form_state['values']['directional'] == 0) {
     $form_state['values']['referenced'] = NULL;
   }
