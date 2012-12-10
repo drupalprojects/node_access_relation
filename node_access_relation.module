@@ -290,7 +290,7 @@ function node_access_relation_get_referenced($eid = NULL, $nid = NULL, &$referen
           else {
             $depth++;
             $passed_nids[] = $row->nid;
-            $new_references = node_access_relation_get_referenced(NULL, $row->uid, &$references, $passed_nids, $depth);
+            $new_references = node_access_relation_get_referenced(NULL, $row->uid, $references, $passed_nids, $depth);
             foreach ($new_references as $returned_nid => $returned_uid) {
               foreach ($passed_nids as $mediary_nid) {
                 $references[$mediary_nid] = $returned_uid;
