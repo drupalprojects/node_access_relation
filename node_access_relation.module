@@ -379,8 +379,6 @@ function node_access_relation_form_relation_ui_type_form_alter(&$form, $form_sta
  $form['node_access_relation'] = array(
     '#type' => 'fieldset',
     '#title' => t(''),
-    '#collapsible' => TRUE,
-    '#collapsed' => FALSE,
     '#states' => array(
       '!visible' => array(
         ':input[name="directional"]' => array('checked' => FALSE),
